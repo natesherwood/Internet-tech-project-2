@@ -84,11 +84,15 @@ def parse_response(data):
         offset += 10
         rdata = data[offset:offset+rdlength]
         offset += rdlength
-        print("atype and rdlength",atype,rdlength,type(rdata))
-        '''
-		 TODO  Add code to extract IPv4 address or IPv6 address based on atype and rdlength
-		 Answer should contain three fields "type","ip", and "ttl"
-        '''
+        if atype == 1 and rdlength == 4:        # A record -> IPv4 address
+            ip = socket.inet_ntop(socket.AF_INET, rdata)
+        elif atype == 28 and rdlength == 16:    # AAAA record -> IPv6 address
+            ip = socket.inet_ntop(socket.AF_INET6, rdata)
+        else:
+            continue                            # not an address record (e.g. CNAME)
+
+        answers.append({"type": atype, "ip": ip, "ttl": ttl})
+
     response["answers"] = answers
     return response
 
@@ -101,4 +105,27 @@ def dns_query(query_spec, server=("8.8.8.8", 53)):
     data, _ = sock.recvfrom(512)
     sock.close()
     result=parse_response(data)
+
+    if result["tc"] == 1:
+        raise Exception("Response truncated (TC=1)")
+    if result["ra"] == 0:
+        raise Exception("Server does not support recursion (RA=0)")
+
     return result
+
+
+if __name__ == "__main__":
+    # Read questions from file
+    with open("Input.json", "r") as f:
+        questions = json.load(f)
+
+    results = []
+    for q in questions:
+        spec = {"id": random.randint(0, 65535), "qr": 0, "opcode": 0, "rd": 1,
+                "questions": [{"qname": q["qname"], "qtype": q["qtype"], "qclass": 1}]}
+        response = dns_query(spec)
+        print(json.dumps(response, indent=2))
+        results.append(response)
+
+    with open("output.txt", "w") as f:
+        json.dump(results, f, indent=2)

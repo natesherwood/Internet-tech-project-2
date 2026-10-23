@@ -1,0 +1,77 @@
+[
+  {
+    "id": 41695,
+    "qr": 1,
+    "opcode": 0,
+    "aa": 0,
+    "tc": 0,
+    "rd": 1,
+    "ra": 1,
+    "rcode": 0,
+    "qdcount": 1,
+    "ancount": 1,
+    "answers": [
+      {
+        "type": 1,
+        "ip": "128.6.13.2",
+        "ttl": 3600
+      }
+    ]
+  },
+  {
+    "id": 34294,
+    "qr": 1,
+    "opcode": 0,
+    "aa": 0,
+    "tc": 0,
+    "rd": 1,
+    "ra": 1,
+    "rcode": 0,
+    "qdcount": 1,
+    "ancount": 1,
+    "answers": [
+      {
+        "type": 28,
+        "ip": "2620:0:d60:ac0d::2",
+        "ttl": 3600
+      }
+    ]
+  },
+  {
+    "id": 28801,
+    "qr": 1,
+    "opcode": 0,
+    "aa": 0,
+    "tc": 0,
+    "rd": 1,
+    "ra": 1,
+    "rcode": 0,
+    "qdcount": 1,
+    "ancount": 0,
+    "answers": []
+  },
+  {
+    "id": 47570,
+    "qr": 1,
+    "opcode": 0,
+    "aa": 0,
+    "tc": 0,
+    "rd": 1,
+    "ra": 1,
+    "rcode": 0,
+    "qdcount": 1,
+    "ancount": 3,
+    "answers": [
+      {
+        "type": 1,
+        "ip": "104.18.5.101",
+        "ttl": 300
+      },
+      {
+        "type": 1,
+        "ip": "104.18.4.101",
+        "ttl": 300
+      }
+    ]
+  }
+]

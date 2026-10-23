@@ -8,11 +8,11 @@ dns_query_spec = {
     "id": random.randint(0, 65535),
     "qr": 0,      # query
     "opcode": 0,  # standard query
-    "rd": 1,      # recursion desired
+    "rd": 0,      # NO recursion - we iterate ourselves (Part C)
     "questions": [
         {
             "qname": "ilab1.cs.rutgers.edu",
-            "qtype": 1,   # NS record
+            "qtype": 1,   # A record
             "qclass": 1   # IN
         }
     ]
@@ -72,11 +72,34 @@ def parse_name(data, offset):
     else:
         return ".".join(labels), original_offset
 
-#your parse_rr from part2
 def parse_rr(data, offset):
-  record={}
-  ## your code from part 2
-  return record, offset
+    """Parse a single resource record and return record + new offset."""
+    name, offset = parse_name(data, offset)
+    atype, aclass, ttl, rdlength = struct.unpack("!HHIH", data[offset:offset+10])
+    offset += 10
+    rdata_start = offset
+    offset += rdlength                      # always advance by RDLENGTH
+
+    record = {"hostname": name, "ttl": ttl, "atype": atype, "class": aclass,
+              "rdlength": rdlength, "ip": None, "nsname": None}
+
+    if atype == 1:                          # A
+        record["rtype"] = "A"
+        record["ip"] = socket.inet_ntop(socket.AF_INET, data[rdata_start:rdata_start+4])
+    elif atype == 28:                       # AAAA
+        record["rtype"] = "AAAA"
+        record["ip"] = socket.inet_ntop(socket.AF_INET6, data[rdata_start:rdata_start+16])
+    elif atype == 2:                        # NS
+        record["rtype"] = "NS"
+        record["nsname"], _ = parse_name(data, rdata_start)
+    elif atype == 5:                        # CNAME
+        record["rtype"] = "CNAME"
+        record["nsname"], _ = parse_name(data, rdata_start)
+    else:
+        record["rtype"] = str(atype)
+        record["rdata"] = data[rdata_start:rdata_start+rdlength].hex()
+
+    return record, offset
 
 def parse_response(data):
     response = {}
@@ -108,12 +131,17 @@ def parse_response(data):
     for _ in range(ANCOUNT):
         rr, offset = parse_rr(data, offset)
         answers.append(rr)
-    authorities=[]
     # Parse Authority RRs (NS)
-    #Add code to parse NS records
-    additionals=[]
+    authorities = []
+    for _ in range(NSCOUNT):
+        rr, offset = parse_rr(data, offset)
+        authorities.append(rr)
+
     # Parse Additional RRs (A, AAAA, etc.)
-    #Add code to Parse additonal records
+    additionals = []
+    for _ in range(ARCOUNT):
+        rr, offset = parse_rr(data, offset)
+        additionals.append(rr)
     
     response["answers"] = answers
     response["authorities"] = authorities
@@ -128,7 +156,7 @@ def dns_query(query_spec, server=("1.1.1.1", 53)):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(5)
     sock.sendto(query, server)
-    data, _ = sock.recvfrom(512)
+    data, _ = sock.recvfrom(4096)
     sock.close()
     return parse_response(data)
 
@@ -138,17 +166,52 @@ def iterative_resolve(query_spec):
     servers = ["198.41.0.4"]#initialize with ip address of any root servers]
     print ("roort servers",servers)
 
-    while servers: 
-        server_ip = servers.pop(0)
-         
+    qname = query_spec["questions"][0]["qname"]
+    qtype = query_spec["questions"][0]["qtype"]
+    trace = []
 
-           ## code main loop
-           #1. dns_query to server_ip
-           #2. check if response ['answers] has ip address, if so done , return ip addrees
-           #else check if additionals has ip address, if so servers=[new_server]
-           # If no glue ip address found, exit
-           #if not new_server:
-            #return {"error": "No glue found"}
+    while servers:
+        server_ip = servers.pop(0)
+        response = dns_query(query_spec, server=(server_ip, 53))
+        trace.append(server_ip)
+        print("  queried %s  aa=%s tc=%s an=%s ns=%s ar=%s" % (
+            server_ip, response["aa"], response["tc"],
+            response["ancount"], response["nscount"], response["arcount"]))
+
+        if response["rcode"] == 3:
+            return {"error": "NXDOMAIN: %s does not exist" % qname,
+                    "servers_contacted": trace}
+        if response["rcode"] != 0:
+            return {"error": "RCODE %s from %s" % (response["rcode"], server_ip),
+                    "servers_contacted": trace}
+
+        # 1. do we have the answer?
+        ips = [rr["ip"] for rr in response["answers"]
+               if rr["atype"] == qtype and rr["ip"]]
+        if ips:
+            return {"qname": qname, "qtype": qtype, "aa": response["aa"],
+                    "addresses": ips, "servers_contacted": trace}
+
+        # 2. referral: match NS names in authority against glue in additional
+        ns_names = [rr["nsname"] for rr in response["authorities"]
+                    if rr["atype"] == 2]
+        glue = {rr["hostname"].lower(): rr["ip"] for rr in response["additionals"]
+                if rr["atype"] == 1 and rr["ip"]}
+
+        new_server = None
+        for n in ns_names:
+            if n and n.lower() in glue:
+                new_server = glue[n.lower()]
+                break
+
+        # 3. no glue -> exit
+        if not new_server:
+            return {"error": "No glue found", "ns_names": ns_names,
+                    "servers_contacted": trace}
+
+        servers = [new_server]
+
+    return {"error": "ran out of servers", "servers_contacted": trace}
 
 
 

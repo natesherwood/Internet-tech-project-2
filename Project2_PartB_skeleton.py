@@ -77,13 +77,21 @@ def parse_rr(data, offset):
     name, offset = parse_name(data, offset)
     atype, aclass, ttl, rdlength = struct.unpack("!HHIH", data[offset:offset+10])
     offset += 10
-    rdata = data[offset:offset+rdlength]
+    rdata_start = offset
     offset += rdlength
-    record={}
-    ##########
-    ##  Your code here to create a record given data 
-    ## record fields shoud include  hostname, ttl, atype, rtype, ip, nsname
-    #################
+
+    record = {"hostname": name, "ttl": ttl, "atype": atype,
+              "rtype": None, "ip": None, "nsname": None}
+
+    if atype == 1:      # A record -> 4 byte IPv4 address
+        record["rtype"] = "A"
+        record["ip"] = socket.inet_ntop(socket.AF_INET, data[rdata_start:rdata_start+4])
+    elif atype == 28:   # AAAA record -> 16 byte IPv6 address
+        record["rtype"] = "AAAA"
+        record["ip"] = socket.inet_ntop(socket.AF_INET6, data[rdata_start:rdata_start+16])
+    elif atype == 2:    # NS record -> name of the server
+        record["rtype"] = "NS"
+        record["nsname"], _ = parse_name(data, rdata_start)
 
     return record,offset
 
@@ -119,10 +127,21 @@ def parse_response(data):
         rr, offset = parse_rr(data, offset)
         answers.append(rr)
 
-    
+    # Parse Authority RRs (NS)
+    authorities = []
+    for _ in range(NSCOUNT):
+        rr, offset = parse_rr(data, offset)
+        authorities.append(rr)
+
+    # Parse Additional RRs (A, AAAA, etc.)
+    additionals = []
+    for _ in range(ARCOUNT):
+        rr, offset = parse_rr(data, offset)
+        additionals.append(rr)
 
     response["answers"] = answers
-    
+    response["authorities"] = authorities
+    response["additionals"] = additionals
 
     return response
 
@@ -135,12 +154,27 @@ def dns_query(query_spec, server=("8.8.8.8", 53)):
     sock.sendto(query, server)
     data, _ = sock.recvfrom(512)
     sock.close()
-    return parse_response(data)
+    response = parse_response(data)
+
+    if response["tc"] == 1:
+        raise Exception("Response truncated (TC=1)")
+    if response["ra"] == 0:
+        raise Exception("Server does not support recursion (RA=0)")
+
+    return response
+
+
+def query_ns(domain):
+    spec = {"id": random.randint(0, 65535), "qr": 0, "opcode": 0, "rd": 1,
+            "questions": [{"qname": domain, "qtype": 2, "qclass": 1}]}
+    response = dns_query(spec)
+
+    # Extract NS names from the response
+    ns_names = [rr["nsname"] for rr in response["answers"] if rr["atype"] == 2]
+    ns_names += [rr["nsname"] for rr in response["authorities"] if rr["atype"] == 2]
+    return ns_names
 
 
 if __name__ == "__main__":
-    response = dns_query(dns_query_spec)
-    print(json.dumps(response,indent=2))
-    with open("dns_response.json", "w") as f:
-        json.dump(response, f, indent=2)
-    print("Response saved to dns_response.json")
+    domain = dns_query_spec["questions"][0]["qname"]
+    print(query_ns(domain))
