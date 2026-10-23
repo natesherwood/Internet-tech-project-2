@@ -48,16 +48,31 @@ The project description contradicts itself:
 - Page 2: *"You should always use 1337 for this field."*
 - The starter code on page 4 uses `random.randint(0, 65535)`
 
-Our code follows the starter code, so the captured IDs are random:
+The three programs are currently inconsistent with each other:
 
-| Capture | Transaction IDs |
-|---|---|
-| Part A | `0x0ed9`, `0x077c`, `0x3ec4`, `0x4546` |
-| Part B | `0x1475` |
-| Part C | `0x93b8` (reused for all three hops) |
+| Program | ID used now | ID in the submitted capture |
+|---|---|---|
+| Part A | `random.randint(0, 65535)` | `0x0ed9`, `0x077c`, `0x3ec4`, `0x4546` |
+| Part B | **`1337` (`0x0539`)** | `0x1475` — capture predates this change |
+| Part C | `random.randint(0, 65535)` | `0x93b8` (reused for all three hops) |
 
-**If 1337 is required:** change the `"id"` field in all three programs and
-**recapture all three pcaps**. Nothing else in the report changes.
+**Part B's code was changed to use 1337 after `project2_partB.pcap` was
+captured**, so the program and the capture no longer agree. Part B's code
+also now queries a second domain, `example.com`, which is not in the
+assignment's test suite — rerunning it produces four packets rather than
+the two in the submitted capture.
+
+**To make everything consistent, pick one:**
+
+- Set `"id"` to `1337` in Parts A and C as well, set Part B's `DOMAINS`
+  back to `["princeton.edu"]` only, and recapture all three pcaps. The
+  transaction IDs in this report then all become `0x0539`, and nothing
+  else changes.
+- Or revert Part B to a random ID and a single domain, matching the
+  submitted capture and the rest of the code.
+
+Everything else in this report describes the submitted captures and is
+unaffected either way.
 
 ## 4. Extra traffic in the Part C capture — explained, no action needed
 
