@@ -163,8 +163,9 @@ def dns_query(query_spec, server=("1.1.1.1", 53)):
 
 
 def iterative_resolve(query_spec):
-    servers = ["198.41.0.4"]#initialize with ip address of any root servers]
-    print ("roort servers",servers)
+    servers = ["198.41.0.4"]      # a.root-servers.net
+    backup_roots = ["199.9.14.201", "192.33.4.12"]   # b. and c.root-servers.net
+    print("root servers", servers + backup_roots)
 
     qname = query_spec["questions"][0]["qname"]
     qtype = query_spec["questions"][0]["qtype"]
@@ -172,7 +173,14 @@ def iterative_resolve(query_spec):
 
     while servers:
         server_ip = servers.pop(0)
-        response = dns_query(query_spec, server=(server_ip, 53))
+        try:
+            response = dns_query(query_spec, server=(server_ip, 53))
+        except socket.timeout:
+            if not servers and backup_roots:      # root unreachable: try the next one
+                servers = [backup_roots.pop(0)]
+                continue
+            return {"error": "no response from %s (timed out)" % server_ip,
+                    "servers_contacted": trace}
         trace.append(server_ip)
         print("  queried %s  aa=%s tc=%s an=%s ns=%s ar=%s" % (
             server_ip, response["aa"], response["tc"],
@@ -195,6 +203,15 @@ def iterative_resolve(query_spec):
         # 2. referral: match NS names in authority against glue in additional
         ns_names = [rr["nsname"] for rr in response["authorities"]
                     if rr["atype"] == 2]
+
+        # Authoritative server returned no records and no further delegation.
+        # This is a normal stop, not a missing-glue error.
+        if not ns_names:
+            return {"qname": qname, "qtype": qtype, "aa": response["aa"],
+                    "addresses": [],
+                    "note": "authoritative: no records and no further delegation",
+                    "servers_contacted": trace}
+
         glue = {rr["hostname"].lower(): rr["ip"] for rr in response["additionals"]
                 if rr["atype"] == 1 and rr["ip"]}
 

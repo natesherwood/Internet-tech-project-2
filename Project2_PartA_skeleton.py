@@ -2,6 +2,7 @@ import socket
 import struct
 import random
 import json
+import os
 
 # Example query spec as JSON
 dns_query_spec = {
@@ -104,10 +105,13 @@ def dns_query(query_spec, server=("8.8.8.8", 53)):
     sock.sendto(query, server)
     data, _ = sock.recvfrom(512)
     sock.close()
+    # Check TC straight from the header: a genuinely truncated message can be
+    # cut off mid-record, so parse_response may fail before we could check it.
+    if (struct.unpack("!H", data[2:4])[0] >> 9) & 1:
+        raise Exception("Response truncated (TC=1)")
+
     result=parse_response(data)
 
-    if result["tc"] == 1:
-        raise Exception("Response truncated (TC=1)")
     if result["ra"] == 0:
         raise Exception("Server does not support recursion (RA=0)")
 
@@ -115,9 +119,12 @@ def dns_query(query_spec, server=("8.8.8.8", 53)):
 
 
 if __name__ == "__main__":
-    # Read questions from file
-    with open("Input.json", "r") as f:
-        questions = json.load(f)
+    # Read questions from file. Accept the PDF's input.txt or the provided
+    # Input.json, and either a bare JSON list or {"questions": [...]}.
+    path = "input.txt" if os.path.exists("input.txt") else "Input.json"
+    with open(path, "r") as f:
+        data = json.load(f)
+    questions = data["questions"] if isinstance(data, dict) else data
 
     results = []
     for q in questions:

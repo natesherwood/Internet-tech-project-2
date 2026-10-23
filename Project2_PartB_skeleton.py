@@ -154,10 +154,13 @@ def dns_query(query_spec, server=("8.8.8.8", 53)):
     sock.sendto(query, server)
     data, _ = sock.recvfrom(512)
     sock.close()
+    # Check TC straight from the header: a genuinely truncated message can be
+    # cut off mid-record, so parse_response may fail before we could check it.
+    if (struct.unpack("!H", data[2:4])[0] >> 9) & 1:
+        raise Exception("Response truncated (TC=1)")
+
     response = parse_response(data)
 
-    if response["tc"] == 1:
-        raise Exception("Response truncated (TC=1)")
     if response["ra"] == 0:
         raise Exception("Server does not support recursion (RA=0)")
 
