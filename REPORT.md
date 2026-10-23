@@ -53,7 +53,7 @@ Our code follows the starter code, so the captured IDs are random:
 | Capture | Transaction IDs |
 |---|---|
 | Part A | `0x0ed9`, `0x077c`, `0x3ec4`, `0x4546` |
-| Part B | `0x0fb6` |
+| Part B | `0x1475` |
 | Part C | `0x93b8` (reused for all three hops) |
 
 **If 1337 is required:** change the `"id"` field in all three programs and
@@ -245,15 +245,15 @@ All nine records are TYPE `00 02` (NS) and CLASS `00 01` (IN).
 
 | # | Name server | RDLENGTH | RDATA (hex) |
 |---|---|---|---|
-| 1 | a1-158.akam.net | `00 11` | `06 61 31 2d 31 35 38 04 61 6b 61 6d 03 6e 65 74 00` |
+| 1 | a20-65.akam.net | `00 11` | `06 61 32 30 2d 36 35 04 61 6b 61 6d 03 6e 65 74 00` |
 | 2 | a24-66.akam.net | `00 09` | `06 61 32 34 2d 36 36 c0 32` |
-| 3 | a7-65.akam.net | `00 08` | `05 61 37 2d 36 35 c0 32` |
-| 4 | a3-67.akam.net | `00 08` | `05 61 33 2d 36 37 c0 32` |
+| 3 | a1-158.akam.net | `00 09` | `06 61 31 2d 31 35 38 c0 32` |
+| 4 | a7-65.akam.net | `00 08` | `05 61 37 2d 36 35 c0 32` |
 | 5 | ns6.dnsmadeeasy.com | `00 15` | `03 6e 73 36 0b 64 6e 73 6d 61 64 65 65 61 73 79 03 63 6f 6d 00` |
-| 6 | a20-65.akam.net | `00 09` | `06 61 32 30 2d 36 35 c0 32` |
-| 7 | ns7.dnsmadeeasy.com | `00 06` | `03 6e 73 37 c0 89` |
-| 8 | a6-64.akam.net | `00 08` | `05 61 36 2d 36 34 c0 32` |
-| 9 | ns5.dnsmadeeasy.com | `00 06` | `03 6e 73 35 c0 89` |
+| 6 | a6-64.akam.net | `00 08` | `05 61 36 2d 36 34 c0 32` |
+| 7 | ns7.dnsmadeeasy.com | `00 06` | `03 6e 73 37 c0 8a` |
+| 8 | a3-67.akam.net | `00 08` | `05 61 33 2d 36 37 c0 32` |
+| 9 | ns5.dnsmadeeasy.com | `00 06` | `03 6e 73 35 c0 8a` |
 
 ## Q9. Why are the RDLENGTH values of the NS records not all the same?
 
@@ -261,16 +261,16 @@ An NS record's RDATA **is a domain name**, stored in the same label format
 as a QNAME. Its size therefore depends entirely on the name, and two
 separate effects make the names different sizes.
 
-**1. The hostnames themselves differ in length.** Compare records 2 and 3:
+**1. The hostnames themselves differ in length.** Compare records 2 and 4:
 `a24-66` is six characters and `a7-65` is five, so their RDLENGTHs are
 `00 09` and `00 08`.
 
 **2. Name compression.** This is the larger effect. Record 1 is `00 11`
-(17 bytes) because `a1-158.akam.net` is the **first** appearance of
+(17 bytes) because `a20-65.akam.net` is the **first** appearance of
 `akam.net` in the message, so the suffix is written out in full:
 
 ```
-06 "a1-158"  04 "akam"  03 "net"  00     = 17 bytes
+06 "a20-65"  04 "akam"  03 "net"  00     = 17 bytes
 ```
 
 Every later `.akam.net` record replaces that suffix with the two-byte
@@ -282,10 +282,18 @@ pointer `c0 32`, collapsing to 8 or 9 bytes:
 
 The same pattern repeats in the other family. Record 5 writes
 `dnsmadeeasy.com` out in full at `00 15` (21 bytes); records 7 and 9 reuse
-it via the pointer `c0 89` and shrink to `00 06` (6 bytes).
+it via the pointer `c0 8a` and shrink to `00 06` (6 bytes).
 
 So the first record of each domain family is long, and its siblings are
 short because they point back into it.
+
+Note that RDLENGTH depends on a record's **position** in the message, not
+only on its name. 8.8.8.8 returns these nine nameservers in a rotating
+order, so whichever `.akam.net` record happens to arrive first is the one
+written out at `00 11`. In an earlier capture of this same query,
+`a1-158.akam.net` came first and measured `00 11`; in the submitted
+capture it arrives third and measures `00 09`. The values in the table
+above are the ones in the submitted `project2_partB.pcap`.
 
 ## Q10. Why do the NS records appear in the Answer section rather than the Authority section?
 

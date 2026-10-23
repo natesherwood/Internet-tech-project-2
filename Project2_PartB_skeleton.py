@@ -2,6 +2,13 @@ import socket
 import struct
 import random
 import json
+import sys
+
+
+DOMAINS = ["princeton.edu", "example.com"]
+
+TYPE_NAMES = {1: "A", 2: "NS", 5: "CNAME", 28: "AAAA"}
+
 
 # Example query spec as JSON
 dns_query_spec = {
@@ -77,21 +84,26 @@ def parse_rr(data, offset):
     name, offset = parse_name(data, offset)
     atype, aclass, ttl, rdlength = struct.unpack("!HHIH", data[offset:offset+10])
     offset += 10
-    rdata_start = offset
+    rdatastart = offset
+    rdata = data[offset:offset+rdlength]
     offset += rdlength
 
-    record = {"hostname": name, "ttl": ttl, "atype": atype,
-              "rtype": None, "ip": None, "nsname": None}
+    record={
+        "hostname": name,
+        "ttl": ttl,
+        "atype": atype,
+        "rtype": TYPE_NAMES.get(atype, str(atype)),
+        "rdlength": rdlength,     
+        "ip": None,
+        "nsname": None,
+    }
 
-    if atype == 1:      # A record -> 4 byte IPv4 address
-        record["rtype"] = "A"
-        record["ip"] = socket.inet_ntop(socket.AF_INET, data[rdata_start:rdata_start+4])
-    elif atype == 28:   # AAAA record -> 16 byte IPv6 address
-        record["rtype"] = "AAAA"
-        record["ip"] = socket.inet_ntop(socket.AF_INET6, data[rdata_start:rdata_start+16])
-    elif atype == 2:    # NS record -> name of the server
-        record["rtype"] = "NS"
-        record["nsname"], _ = parse_name(data, rdata_start)
+    if atype == 1 and rdlength == 4:
+        record["ip"] = socket.inet_ntoa(rdata)
+    elif atype == 28 and rdlength == 16:
+        record["ip"] = socket.inet_ntop(socket.AF_INET6, rdata)
+    elif atype in (2, 5):
+        record["nsname"], _ = parse_name(data, rdatastart)
 
     return record,offset
 
@@ -119,7 +131,7 @@ def parse_response(data):
         while data[offset] != 0:
             offset += data[offset] + 1
         offset += 1
-        offset += 4  # qtype + qclass
+        offset += 4  
 
     # Parse Answer RRs
     answers = []
@@ -127,18 +139,18 @@ def parse_response(data):
         rr, offset = parse_rr(data, offset)
         answers.append(rr)
 
-    # Parse Authority RRs (NS)
+    # Parse Authority RRs
     authorities = []
     for _ in range(NSCOUNT):
         rr, offset = parse_rr(data, offset)
         authorities.append(rr)
 
-    # Parse Additional RRs (A, AAAA, etc.)
+    # Parse Additional RRs
     additionals = []
     for _ in range(ARCOUNT):
         rr, offset = parse_rr(data, offset)
         additionals.append(rr)
-
+    
     response["answers"] = answers
     response["authorities"] = authorities
     response["additionals"] = additionals
@@ -154,30 +166,55 @@ def dns_query(query_spec, server=("8.8.8.8", 53)):
     sock.sendto(query, server)
     data, _ = sock.recvfrom(512)
     sock.close()
-    # Check TC straight from the header: a genuinely truncated message can be
-    # cut off mid-record, so parse_response may fail before we could check it.
-    if (struct.unpack("!H", data[2:4])[0] >> 9) & 1:
-        raise Exception("Response truncated (TC=1)")
-
-    response = parse_response(data)
-
-    if response["ra"] == 0:
-        raise Exception("Server does not support recursion (RA=0)")
-
-    return response
-
+    return parse_response(data)
 
 def query_ns(domain):
-    spec = {"id": random.randint(0, 65535), "qr": 0, "opcode": 0, "rd": 1,
-            "questions": [{"qname": domain, "qtype": 2, "qclass": 1}]}
+    spec = {
+        "id": 1337,
+        "qr": 0,
+        "opcode": 0,
+        "rd": 1,
+        "questions": [{"qname": domain, "qtype": 2, "qclass": 1}],
+    }
     response = dns_query(spec)
 
-    # Extract NS names from the response
-    ns_names = [rr["nsname"] for rr in response["answers"] if rr["atype"] == 2]
-    ns_names += [rr["nsname"] for rr in response["authorities"] if rr["atype"] == 2]
-    return ns_names
+    if response["tc"] == 1:
+        sys.exit(f"Error: response for {domain} was truncated")
+    if response["ra"] == 0:
+        sys.exit("Error: server does not support recursion")
+    if response["rcode"] != 0:
+        sys.exit(f"Error: RCODE {response['rcode']} for {domain}")
 
+    ns_records = [r for r in response["answers"] + response["authorities"]
+                  if r["atype"] == 2]
+
+    glue = {}
+    for r in response["additionals"]:
+        if r["atype"] in (1, 28) and r["ip"]:
+            glue.setdefault(r["hostname"].lower(), []).append(r["ip"])
+
+    matched = []
+    for r in ns_records:
+        matched.append({
+            "nsname": r["nsname"],
+            "rdlength": r["rdlength"],
+            "ttl": r["ttl"],
+            "glue_ips": glue.get(r["nsname"].lower(), []),
+        })
+
+    return response, matched
 
 if __name__ == "__main__":
-    domain = dns_query_spec["questions"][0]["qname"]
-    print(query_ns(domain))
+    results = {}
+    for domain in DOMAINS:
+        response, ns_info = query_ns(domain)
+        print(f"=== {domain} ===")
+        print(f"QDCOUNT={response['qdcount']} ANCOUNT={response['ancount']} "
+              f"NSCOUNT={response['nscount']} ARCOUNT={response['arcount']}")
+        for ns in ns_info:
+            print(f"  NS {ns['nsname']}  rdlength={ns['rdlength']}  glue={ns['glue_ips']}")
+        results[domain] = {"response": response, "nameservers": ns_info}
+
+    with open("output_partB.json", "w") as f:
+        json.dump(results, f, indent=2)
+    print("Saved to output_partB.json")
