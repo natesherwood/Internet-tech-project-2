@@ -5,18 +5,16 @@
 
 | Name | netID |
 |---|---|
-| [NAME] | [NETID] |
-| [NAME] | [NETID] |
+| Nathaniel Sherwood | nps104 |
+| Aidan Dipasupal | akd142 |
 
 ---
 
 # ⚠️ OPEN ITEMS — READ FIRST, RESOLVE BEFORE SUBMITTING
 
-## 1. Names and netIDs — REQUIRED
+## 1. ~~Names and netIDs~~ — DONE
 
-Deliverable 4 says the report must list the name and netID of every group
-member. Fill in the table above. This is the only item that cannot be
-resolved from the captures.
+Both group members are listed in the table above.
 
 ## 2. whale.stanford.edu query type — ASK THE TA
 
